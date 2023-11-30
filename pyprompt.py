@@ -4,12 +4,13 @@ import os
 
 global default_url, default_api_key, default_model, default_mode, default_character, default_system
 
-default_url = os.environ.get("OPENAI_API_BASE")
+default_url = os.environ.get("OPENAI_API_BASE") or "https://api.openai.com/v1"
 default_api_key = os.environ.get("OPENAI_API_KEY")
-default_model = os.environ.get("OPENAI_API_MODEL")
-default_mode = os.environ.get("OPENAI_API_MODE") or "chat"
+default_model = os.environ.get("OPENAI_API_MODEL") or "gpt-3.5-turbo"
+default_mode = os.environ.get("OPENAI_API_MODE") or "instruct"
 default_character = os.environ.get("OPENAI_API_CHARACTER")
 default_system = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
+default_enforce = os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n"
 printer = "/tmp/DEVTERM_PRINTER_IN"
 
 history = []
@@ -33,10 +34,13 @@ def start_interface():
     os.system('cls||clear')
     output_result(banner)
     change_options = "y"
+    def star(string):
+        return ''.join('*' * len(string))
     if str(default_url) != "None" and str(default_model) != "None" and str(default_mode) != "None":
         print("Current settings:")
         print("API URL: " + str(default_url))
-        print("API Key: " + str(default_api_key))
+        print("API Key: " + str(star(default_api_key)))
+        print("Enforce model: " + str(default_enforce))
         print("Model: " + str(default_model))
         print("Mode: " + str(default_mode))
         if str(default_mode) == "chat":
@@ -69,7 +73,8 @@ def enforce_model(settings):
 
 def generate_ai_response(chat_history, new_question, settings):
     try:
-        enforce_model(settings)
+        if settings['model'] != "n":
+            enforce_model(settings)
         messages = []
         if settings['mode'] == "chat":
             for question, answer in chat_history:
@@ -100,13 +105,15 @@ def generate_ai_response(chat_history, new_question, settings):
         print(f"Error generating response: {str(e)}")
 
 
-def initialize_settings(change_options, default_url, default_api_key, default_model, default_mode, default_character, default_system):
+def initialize_settings(change_options, default_url, default_api_key, default_model, default_enforce, default_mode, default_character, default_system):
     def generate_headers(api_key):
         headers = {
             "Content-Type": "application/json",
         }
         headers['Authorization'] = f"Bearer " + api_key
         return headers
+    def star(string):
+        return ''.join('*' * len(string))
     settings = dict();
     reset_screen()
     settings['url'] = "None"
@@ -118,36 +125,41 @@ def initialize_settings(change_options, default_url, default_api_key, default_mo
     if change_options == "n":
         settings['api_key'] = str(default_api_key)
     else:
-        settings['api_key'] = str(input("Enter the api key (empty for default: " + str(default_api_key) + "): ") or default_api_key)
+        settings['api_key'] = str(input("Enter the api key (empty for default: " + str(star(default_api_key)) + "): ") or default_api_key)
     settings['headers'] = generate_headers(settings['api_key'])
-
     reset_screen()
-
+    settings['model'] = ""
     if change_options == "n":
+        settings['model'] = str(default_enforce)
+    while settings['model'] != "n" and settings['model'] != "y":
+        settings['model'] = str(input("Enter y if you want to run another model than currently loaded (empty for no): ") or "n")
+    if change_options == "n" and str(default_enforce) == "y":
         settings['model'] = str(default_model)
     else:
-        try:
-            response = requests.get(settings['url'] + "/internal/model/list", headers=settings['headers'], verify=True)
-            print("Available models:")
-            answer_json = response.json()
-            i = 0 
-            model_table = {}
-            for name in answer_json["model_names"]:
-                model_table[i] = name
-                i = i + 1
-            i = 0
-            for entries in model_table:
-                if (i >= 0):
-                    print(str(i) + ": " + model_table[i])
-                i = i + 1
-        except Exception as e:
-            print(f"Error fetching available models: {str(e)}")
-
-        selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default_model) + "): ")
-        if (selected_model):
-            settings['model'] = model_table[int(selected_model)]
+        if settings['model'] == "y":
+            try:
+                response = requests.get(settings['url'] + "/internal/model/list", headers=settings['headers'], verify=True)
+                print("Available models:")
+                answer_json = response.json()
+                i = 0 
+                model_table = {}
+                for name in answer_json["model_names"]:
+                    model_table[i] = name
+                    i = i + 1
+                i = 0
+                for entries in model_table:
+                    if (i >= 0):
+                        print(str(i) + ": " + model_table[i])
+                    i = i + 1
+            except Exception as e:
+                print(f"Error fetching available models: {str(e)}")
+            selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default_model) + "): ")
+            if (selected_model):
+                settings['model'] = model_table[int(selected_model)]
+            else:
+                settings['model'] = str(default_model)
         else:
-            settings['model'] = str(default_model)
+            settings['model'] = "n"
     reset_screen()
     if change_options == "n":
         settings['mode'] = str(default_mode)
@@ -171,7 +183,7 @@ def initialize_settings(change_options, default_url, default_api_key, default_mo
     return settings
 
 change_options = start_interface()
-settings = initialize_settings(change_options, default_url, default_api_key, default_model, default_mode, default_character, default_system)
+settings = initialize_settings(change_options, default_url, default_api_key, default_model, default_enforce, default_mode, default_character, default_system)
 reset_screen()
 
 while True:
