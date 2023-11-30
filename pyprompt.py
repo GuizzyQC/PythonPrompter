@@ -5,10 +5,10 @@ import os
 global default_url, default_api_key, default_model, default_mode, default_character, default_system
 
 default_url = os.environ.get("OPENAI_API_BASE") or "https://api.openai.com/v1"
-default_api_key = os.environ.get("OPENAI_API_KEY")
-default_model = os.environ.get("OPENAI_API_MODEL") or "gpt-3.5-turbo"
+default_api_key = os.environ.get("OPENAI_API_KEY") or ""
+default_model = os.environ.get("OPENAI_API_MODEL") or "n"
 default_mode = os.environ.get("OPENAI_API_MODE") or "instruct"
-default_character = os.environ.get("OPENAI_API_CHARACTER")
+default_character = os.environ.get("OPENAI_API_CHARACTER") or ""
 default_system = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
 default_enforce = os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n"
 printer = "/tmp/DEVTERM_PRINTER_IN"
@@ -39,10 +39,12 @@ def start_interface():
     if str(default_url) != "None" and str(default_model) != "None" and str(default_mode) != "None":
         print("Current settings:")
         print("API URL: " + str(default_url))
-        print("API Key: " + str(star(default_api_key)))
+        if str(default_api_key) != "":
+            print("API Key: " + str(star(default_api_key)))
         print("Enforce model: " + str(default_enforce))
         if str(default_enforce) == "y":
-            print("Model: " + str(default_model))
+            if str(default_model) != "n":
+                print("Model: " + str(default_model))
         print("Mode: " + str(default_mode))
         if str(default_mode) == "chat":
             print("Character: " + str(default_character))
@@ -154,7 +156,10 @@ def initialize_settings(change_options, default_url, default_api_key, default_mo
                     i = i + 1
             except Exception as e:
                 print(f"Error fetching available models: {str(e)}")
-            selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default_model) + "): ")
+            if str(default_model) == "n":
+                selected_model = input("\nEnter the number of the model to run (empty to keep currently loaded model): ")
+            else:
+                selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default_model) + "): ")
             if (selected_model):
                 settings['model'] = model_table[int(selected_model)]
             else:
