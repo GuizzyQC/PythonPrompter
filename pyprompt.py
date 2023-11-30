@@ -41,7 +41,8 @@ def start_interface():
         print("API URL: " + str(default_url))
         print("API Key: " + str(star(default_api_key)))
         print("Enforce model: " + str(default_enforce))
-        print("Model: " + str(default_model))
+        if str(default_enforce) == "y":
+            print("Model: " + str(default_model))
         print("Mode: " + str(default_mode))
         if str(default_mode) == "chat":
             print("Character: " + str(default_character))
