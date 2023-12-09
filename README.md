@@ -21,14 +21,23 @@ pip install -r PythonPrompter/requirements.txt
 The software is configured using environmental variables. You can either supply them to your command before launching it or save them in your command line shell's profile.
 
 Here's what the environmental variables are and do:
+
 OPENAI_API_BASE: Sets your API's endpoint. Defaults to "https://api.openai.com/v1". Note that I have never tested this with openai, it holds no interest for me. But in theory it should probably be compatible if you supply an API key.
+
 OPENAI_API_KEY: Sets your API key.
+
 OPENAI_API_ENFORCE_MODEL: Choose "y" or "n" to define whether you want the software to force the API endpoint to use another model than is currently running on it, useful for text-generation-webui which exposes multiple possible models.
+
 OPENAI_API_MODEL: Sets the model used by your endpoint of you set y to OPENAI_API_ENFORCE_MODEL, useful for text-generation-webui which exposes multiple possible models.
+
 OPENAI_API_PRESET: Sets the preset used by your endpoint, provided you are enforcing the model. Useful for text-generation-webui which exposes multiple possible presets. Defaults to "Divine Intellect"
+
 OPENAI_API_MODE: Sets whether to use "chat" mode or "instruct" mode. Defaults to "instruct"
+
 OPENAI_API_CHARACTER: Sets the name of the character to interact with in "chat" mode. Make sure this character exists.
+
 OPENAI_API_SYSTEM: Sets the "system" prompt used in "instruct" mode. Defaults to a boring but multipurpose: "You are a helpful assistant, answer any request from the user."
+
 PYPROMPT_PRINTER: If you are the lucky owner of a DevTerm, setting "y" here will enable printouts on the thermal printer. Defaults to "n".
 
 Setting variables in Bash can be done with the command:
