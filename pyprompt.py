@@ -1,80 +1,94 @@
+# Python Prompter
+# By: GuizzyQC
+
 import requests
 import json
 import os
+import sys
+import re
+from bs4 import BeautifulSoup
 
-global default_url, default_api_key, default_model, default_mode, default_character, default_system
-
-default_url = os.environ.get("OPENAI_API_BASE") or "https://api.openai.com/v1"
-default_api_key = os.environ.get("OPENAI_API_KEY") or ""
-default_model = os.environ.get("OPENAI_API_MODEL") or "n"
-default_mode = os.environ.get("OPENAI_API_MODE") or "instruct"
-default_character = os.environ.get("OPENAI_API_CHARACTER") or ""
-default_system = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
-default_enforce = os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n"
-printer = "/tmp/DEVTERM_PRINTER_IN"
-
+default = dict()
 history = []
+printer = "/tmp/DEVTERM_PRINTER_IN"
+max_text_length = 7000
 banner = "*************************\nWelcome to PythonPrompter\n*************************\n\n\nYou can press Ctrl-C at any time to exit\n\n\n"
 
+default['url'] = os.environ.get("OPENAI_API_BASE") or "https://api.openai.com/v1"
+default['api_key'] = os.environ.get("OPENAI_API_KEY") or ""
+default['model'] = (os.environ.get("OPENAI_API_MODEL") or "n")
+default['mode'] = (os.environ.get("OPENAI_API_MODE") or "instruct").lower()
+default['preset'] = os.environ.get("OPENAI_API_PRESET") or "Divine Intellect"
+default['character'] = os.environ.get("OPENAI_API_CHARACTER") or ""
+default['system'] = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
+default['enforce'] = (os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n").lower()
+default['printer_toggle'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
 
-def output_result(output, echo=1):
+
+# This function takes an output string and an optional echo parameter (default is 1) and prints the output to the console if echo is True. If the parameter output_to_printer is set to 'y', it also sends the output to a printer specified by the printer variable using the os.system command. 
+def output_result(string, output_to_printer=False, echo=True):
     if echo:
-        print(output)
-    if enable_printer == "y":
-        printer_command = "echo \"" + output + "\""
+        print(string)
+    if output_to_printer:
+        printer_command = "echo \"" + string + "\""
         os.system(printer_command + " > " + printer)
 
-def start_interface():
-    global enable_printer
-    enable_printer = ""
-    if os.path.exists(printer):
-        print("Devterm thermal printer detected!\n")
-        while enable_printer != "y" and enable_printer != "n":
-            enable_printer = str(input("Enter y to enable the printer: ")) or "n"
-    os.system('cls||clear')
-    output_result(banner)
+# Hide a string for display, will only show the length of the string
+def star(string):
+    return ''.join('*' * len(string))
+
+# This function starts the interface by printing the banner, displaying the current settings, and asking the user if they want to change the settings. 
+# It returns a string indicating whether the user wants to change the settings or not. 
+def start_interface(default):
     change_options = "y"
-    def star(string):
-        return ''.join('*' * len(string))
-    if str(default_url) != "None" and str(default_model) != "None" and str(default_mode) != "None":
+    os.system('cls||clear')
+    print(banner)
+    if str(default['url']) != "https://api.openai.com/v1" and str(default['api_key']) != "":
         print("Current settings:")
-        print("API URL: " + str(default_url))
-        if str(default_api_key) != "":
-            print("API Key: " + str(star(default_api_key)))
-        print("Enforce model: " + str(default_enforce))
-        if str(default_enforce) == "y":
-            if str(default_model) != "n":
-                print("Model: " + str(default_model))
-        print("Mode: " + str(default_mode))
-        if str(default_mode) == "chat":
-            print("Character: " + str(default_character))
-        if str(default_mode) == "instruct":
-            print("System prompt: " + str(default_system))
+        print("API URL: " + str(default['url']))
+        if str(default['api_key']) != "":
+            print("API Key: " + str(star(default['api_key'])))
+        print("Enforce model: " + str(default['enforce']))
+        if str(default['enforce']) == "y":
+            if str(default['model']) != "n":
+                print("Model: " + str(default['model']))
+        print("Mode: " + str(default['mode']))
+        if str(default['mode']) == "chat":
+            print("Character: " + str(default['character']))
+        if str(default['mode']) == "instruct":
+            print("System prompt: " + str(default['system']))
+        if os.path.exists(printer):
+            print("\nDevterm thermal printer detected!")
+            print("Printer toggle: " + str(default['printer_toggle']))
         answer = ""
         while answer != "y" and answer != "n":
             answer = str(input("\nEnter y to change the settings: ")) or "n"
         change_options = answer 
     return change_options
 
+# This function clears the terminal screen and prints a banner. 
 def reset_screen():
-    os.system('cls||clear')
-    print(banner)
+    if len(sys.argv)==1:
+        os.system('cls||clear')
+        print(banner)
 
+# To summarize the behavior of this function in one line, it loads a model into the system by sending a POST request to the specified URL with the model's settings as JSON data in the request body. The function handles any exceptions that may occur during the request and prints an error message if there is a problem. 
 def enforce_model(settings):
     try:
-        response = requests.get(settings['url'] + "/internal/model/info", headers=settings['headers'], verify=True)
+        response = requests.get(settings['url'] + "/internal/model/info", headers=settings['headers'], timeout=15, verify=True)
         answer_json = response.json()
         if answer_json["model_name"] != settings['model']:
             print(">>> Please be patient, changing model to " + str(settings['model']))
             data = {
                 'model_name': settings['model'],
-                'settings': { "preset": "Divine Intellect", "custom_stopping_strings": '\"</s>\"' }
+                'settings': { "preset": settings['preset'], "custom_stopping_strings": '\"</s>\"' }
             }
-            response = requests.post(settings['url'] + "/internal/model/load", headers=settings['headers'], json=data, verify=True)
+            response = requests.post(settings['url'] + "/internal/model/load", headers=settings['headers'], json=data, timeout=60, verify=True)
     except Exception as e:
         print(f"Error setting model: {str(e)}")
 
-def generate_ai_response(chat_history, new_question, settings):
+# This function generates an AI response based on the chat history and new question provided. It uses the given settings to determine the behavior of the AI. It first checks if the model is not set to "n" and enforces the model if necessary. Then, it creates a list of messages based on the chat history and new questions. Depending on the mode, it adds either a user or system message to the messages list. Finally, it sends a POST request to the URL with the data and headers, and returns the AI's response message. If there is an error during the process, it prints an error message.
+def generate_ai_response(chat_history, prompt, settings):
     try:
         if settings['model'] != "n":
             enforce_model(settings)
@@ -83,23 +97,21 @@ def generate_ai_response(chat_history, new_question, settings):
             for question, answer in chat_history:
                 messages.append({"role": "user", "content": question})
                 messages.append({"role": "assistant", "content": answer})
-            messages.append({"role": "user", "content": new_question})
+            messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
                 'messages': messages,
                 'mode': 'chat',
                 'character': settings['character'],
-                'max_tokens': 2000,
-                'temperature': 0.75
+                'max_tokens': 8000,
             }
         if settings['mode'] == "instruct":
             messages.append({"role": "system", "content": settings['system']})
-            messages.append({"role": "user", "content": new_question})
+            messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
                 'messages': messages,
-                'max_tokens': 2000,
-                'temperature': 0.75
+                'max_tokens': 8000,
             }
         response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, verify=True)
         assistant_message = response.json()['choices'][0]['message']['content']
@@ -108,94 +120,187 @@ def generate_ai_response(chat_history, new_question, settings):
         print(f"Error generating response: {str(e)}")
 
 
-def initialize_settings(change_options, default_url, default_api_key, default_model, default_enforce, default_mode, default_character, default_system):
+# This function initializes settings for an application by prompting the user for input and using default values if specified. It returns a dictionary containing the settings. 
+def initialize_settings(change_options, default):
     def generate_headers(api_key):
         headers = {
             "Content-Type": "application/json",
         }
         headers['Authorization'] = f"Bearer " + api_key
         return headers
-    def star(string):
-        return ''.join('*' * len(string))
-    settings = dict();
+    settings = dict()
     reset_screen()
-    settings['url'] = "None"
-    if change_options == "n":
-        settings['url'] = str(default_url)
-    while settings['url'] == "None":
-        settings['url'] = str(input("Enter the endpoint (empty for default: " + str(default_url) + "): ") or default_url)
-        reset_screen()
-    if change_options == "n":
-        settings['api_key'] = str(default_api_key)
-    else:
-        settings['api_key'] = str(input("Enter the api key (empty for default: " + str(star(default_api_key)) + "): ") or default_api_key)
-    settings['headers'] = generate_headers(settings['api_key'])
-    reset_screen()
+    settings['url'] = ""
+    settings['api_key'] = ""
+    settings['headers'] = ""
     settings['model'] = ""
+    settings['mode'] = ""
+    settings['system'] = ""
+    settings['character'] = ""
+    settings['preset'] = ""
+    settings['printer_toggle'] = False
     if change_options == "n":
-        settings['model'] = str(default_enforce)
-    while settings['model'] != "n" and settings['model'] != "y":
-        settings['model'] = str(input("Enter y if you want to run another model than currently loaded (empty for no): ") or "n")
-    if change_options == "n" and str(default_enforce) == "y":
-        settings['model'] = str(default_model)
-    else:
+        settings['url'] = str(default['url'])
+        settings['api_key'] = str(default['api_key'])
+        settings['headers'] = generate_headers(settings['api_key'])
+        if str(default['enforce']) == "y":
+            settings['model'] = str(default['model'])
+        else:
+            settings['model'] = "n"
+        settings['preset'] = str(default['preset'])
+        settings['mode'] = str(default['mode'])
+        if settings['mode'] == "chat":
+            settings['character'] = str(default['character'])
+        if settings['mode'] == "instruct":
+            settings['system'] = str(default['system'])
+        if os.path.exists(printer):
+            if str(default['printer_toggle']) == "y":
+                settings['printer_toggle'] = True
+    if change_options == "y":
+        settings['url'] = str(input("Enter the endpoint (empty for default: " + str(default['url']) + "): ") or default['url'])
+        reset_screen()
+        if str(default['api_key']) != "":
+            settings['api_key'] = str(input("Enter the api key (empty for default): ") or default['api_key'])
+        else:
+            settings['api_key'] = str(input("Enter the api key: ") or default['api_key'])
+        settings['headers'] = generate_headers(settings['api_key'])
+        reset_screen()
+        try:
+            response = requests.get(settings['url'] + "/internal/model/info", headers=settings['headers'], timeout=2, verify=True)
+            answer_json = response.json()
+            print("Currently loaded model: " + answer_json["model_name"])
+        except:
+            print("Endpoint did not respond to model info request")
+        while settings['model'] != "n" and settings['model'] != "y":
+            settings['model'] = str(input("Enter y if you want to run another model than currently loaded (empty for no): ") or "n")
         if settings['model'] == "y":
             try:
-                response = requests.get(settings['url'] + "/internal/model/list", headers=settings['headers'], verify=True)
+                response = requests.get(settings['url'] + "/internal/model/list", headers=settings['headers'], timeout=5, verify=True)
                 print("Available models:")
                 answer_json = response.json()
                 i = 0 
                 model_table = {}
                 for name in answer_json["model_names"]:
                     model_table[i] = name
-                    i = i + 1
-                i = 0
-                for entries in model_table:
-                    if (i >= 0):
-                        print(str(i) + ": " + model_table[i])
+                    print(str(i) + ": " + name)
                     i = i + 1
             except Exception as e:
                 print(f"Error fetching available models: {str(e)}")
-            if str(default_model) == "n":
+            if str(default['model']) == "n":
                 selected_model = input("\nEnter the number of the model to run (empty to keep currently loaded model): ")
             else:
-                selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default_model) + "): ")
+                if default['model'] != "":
+                    selected_model = input("\nEnter the number of the model to run (empty for default: " + str(default['model']) + "): ")
             if (selected_model):
                 settings['model'] = model_table[int(selected_model)]
             else:
-                settings['model'] = str(default_model)
-        else:
-            settings['model'] = "n"
-    reset_screen()
-    if change_options == "n":
-        settings['mode'] = str(default_mode)
-    else:
-        settings['mode'] = ""
+                settings['model'] = str(default['model'])
+            settings['preset'] = str(input("Enter the preset to use (empty for default: " + str(default['preset']) + "): ") or default['preset'])
+        reset_screen()
         while settings['mode'] != "chat" and settings['mode'] != "instruct":
-            settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct (empty for " + str(default_mode) + "): ") or str(default_mode)).lower()
-        settings['character'] = ""
-    reset_screen()
-    if settings['mode'] == "chat":
-        if change_options == "n":
-            settings['character'] = str(default_character)
-        else:
-            settings['character'] = str(input("Enter the character to embody (empty for default: " + str(default_character) + "): ") or str(default_character))
-    if settings['mode'] == "instruct":
-        if change_options == "n":
-            settings['system'] = str(default_system)
-        else:
-            settings['system'] = str(input("Enter the base system prompt to use (empty for default: " + str(default_system) + "): ") or str(default_system))
-
+            if default['mode'] != "chat" and default['mode'] != "instruct":
+                settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct: ")).lower()
+            else:
+                settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct (empty for " + str(default['mode']) + "): ") or str(default['mode'])).lower()
+        reset_screen()
+        while settings['mode'] == "chat" and settings['character'] == "":
+            if default['character'] == "":
+                settings['character'] = str(input("Enter the character to embody: "))
+            else:
+                settings['character'] = str(input("Enter the character to embody (empty for default: " + str(default['character']) + "): ") or str(default['character']))
+        if settings['mode'] == "instruct":
+            settings['system'] = str(input("Enter the base system prompt to use (empty for default: " + str(default['system']) + "): ") or str(default['system']))
+        if os.path.exists(printer):
+            answer = ""
+            while answer != "y" and answer != "n":
+                answer = str(input("Enter y to enable the printer: ")).lower or "n"
+            if answer == "y":
+                settings['printer_toggle'] = True
+            else:
+                settings['printer_toggle'] = False
+    if len(sys.argv)==1:
+        os.system('cls||clear')
+        output_result(banner, settings['printer_toggle'])
     return settings
 
-change_options = start_interface()
-settings = initialize_settings(change_options, default_url, default_api_key, default_model, default_enforce, default_mode, default_character, default_system)
-reset_screen()
+def expand_url(string):
+    def extract_url(prompt):
+        url = ""
+        # Regular expression to match URLs
+        url_pattern = r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+"
+        # Find all URLs in the text
+        urls = re.findall(url_pattern, prompt.lower())
+        if len(urls) > 0:
+            url = urls[0]
+        return url
+    def get_page(url):
+        def trim_to_x_words(prompt, limit):
+            rev_rs = []
+            words = prompt.split(" ")
+            rev_words = reversed(words)
+            for w in rev_words:
+                rev_rs.append(w)
+                limit -= 1
+                if limit <= 0:
+                    break
+            rs = reversed(rev_rs)
+            return " ".join(rs)
+            text = f"The web page at {url} doesn't have any useable content. Sorry."
+        try:
+            response = requests.get(url)
+        except:
+            return f"The page {url} could not be loaded"
+        soup = BeautifulSoup(response.content, "html.parser")
+        paragraphs = soup.find_all("p")
+        if len(paragraphs) > 0:
+            text = "\n".join(p.get_text() for p in paragraphs)
+            text = f"Content of {url} : \n{trim_to_x_words(text, max_text_length)}[...]\n"
+        else:
+            text = f"The web page at {url} doesn't seem to have any readable content."
+            metas = soup.find_all("meta")
+            for m in metas:
+                if "content" in m.attrs:
+                    try:
+                        if (
+                            "name" in m
+                            and m["name"] == "page-topic"
+                            or m["name"] == "description"
+                        ):
+                            if "content" in m and m["content"] != None:
+                                text += f"It's {m['name']} is '{m['content']}'"
+                    except:
+                        pass
+        return text
+    url = extract_url(string)
+    message = string
+    if url != "":
+        message = message + "\n" + get_page(url)
+    return message
 
-while True:
-    user_message = input("> ")
-    output_result(str("> " + user_message + "\n\n"), 0)
-    assistant_message = generate_ai_response(history, user_message, settings)
-    if settings['mode'] == "chat":
-        history.append((user_message, assistant_message))
-    output_result(assistant_message)
+if len(sys.argv) > 1:
+    settings = initialize_settings("n", default)
+    message = ""
+    url = ""
+    for arg in sys.argv[1:]:
+        message = message + " " + arg
+    message = expand_url(message)
+    assistant_message = generate_ai_response([], message, settings)
+    assistant_message = assistant_message.replace("</s>","")
+    print(assistant_message)
+
+if len(sys.argv)==1:
+# This code initializes the user interface, retrieves the user's settings, and resets the screen. 
+    change_options = start_interface(default)
+    settings = initialize_settings(change_options, default)
+    reset_screen()
+
+# This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
+    while True:
+        user_message = input("> ")
+        output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
+        user_message = expand_url(user_message)
+        assistant_message = generate_ai_response(history, user_message, settings)
+        assistant_message = assistant_message.replace("</s>","")
+        if settings['mode'] == "chat":
+            history.append((user_message, assistant_message))
+        output_result(assistant_message, settings['printer_toggle'])
