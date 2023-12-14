@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import re
+import shlex 
 from bs4 import BeautifulSoup
 
 default = dict()
@@ -30,7 +31,7 @@ def output_result(string, output_to_printer=False, echo=True):
     if echo:
         print(string)
     if output_to_printer:
-        printer_command = "echo \"" + string + "\""
+        printer_command = "echo " + shlex.quote(string)
         os.system(printer_command + " > " + printer)
 
 # Hide a string for display, will only show the length of the string
