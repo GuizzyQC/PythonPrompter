@@ -23,6 +23,7 @@ default['preset'] = os.environ.get("OPENAI_API_PRESET") or "Divine Intellect"
 default['character'] = os.environ.get("OPENAI_API_CHARACTER") or ""
 default['system'] = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
 default['enforce'] = (os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n").lower()
+default['history_file'] = (os.environ.get("PYPROMPT_HISTORY") or "n").lower()
 default['printer_toggle'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
 
 
@@ -53,6 +54,10 @@ def start_interface(default):
         if str(default['enforce']) == "y":
             if str(default['model']) != "n":
                 print("Model: " + str(default['model']))
+        if str(default['history_file']) == "n":
+            print("History file: Do not save conversation history")
+        if str(default['history_file']) != "n":
+            print("History file: " + str(default['history_file']))
         print("Mode: " + str(default['mode']))
         if str(default['mode']) == "chat":
             print("Character: " + str(default['character']))
@@ -140,6 +145,7 @@ def initialize_settings(change_options, default):
     settings['character'] = ""
     settings['preset'] = ""
     settings['printer_toggle'] = False
+    settings['history_file'] = ""
     if change_options == "n":
         settings['url'] = str(default['url'])
         settings['api_key'] = str(default['api_key'])
@@ -154,6 +160,7 @@ def initialize_settings(change_options, default):
             settings['character'] = str(default['character'])
         if settings['mode'] == "instruct":
             settings['system'] = str(default['system'])
+        settings['history_file'] = str(default['history_file'])
         if os.path.exists(printer):
             if str(default['printer_toggle']) == "y":
                 settings['printer_toggle'] = True
@@ -211,6 +218,7 @@ def initialize_settings(change_options, default):
                 settings['character'] = str(input("Enter the character to embody (empty for default: " + str(default['character']) + "): ") or str(default['character']))
         if settings['mode'] == "instruct":
             settings['system'] = str(input("Enter the base system prompt to use (empty for default: " + str(default['system']) + "): ") or str(default['system']))
+        settings['history_file'] = str(input("Enter the history filename to load from and save history to, or n to not save (empty for default: " + str(default['history_file']) + "): ") or default['history_file'])
         if os.path.exists(printer):
             answer = ""
             while answer != "y" and answer != "n":
@@ -278,21 +286,55 @@ def expand_url(string):
         message = message + "\n" + get_page(url)
     return message
 
+def write_history(text, file):
+    f=open(file,'w+')
+    json.dump(text, f)
+
+def read_history(file):
+    f=open(file,'r')
+    history = json.load(f)
+    return history
+
 if len(sys.argv) > 1:
     settings = initialize_settings("n", default)
-    message = ""
+    user_message = ""
     url = ""
-    for arg in sys.argv[1:]:
-        message = message + " " + arg
-    message = expand_url(message)
-    assistant_message = generate_ai_response([], message, settings)
+    if sys.argv[1].lower() == "--instruct":
+        settings['mode'] = "instruct"
+        settings['system'] = str(default['system'])
+    if sys.argv[1].lower() == "--chat":
+        settings['mode'] = "chat"
+        settings['character'] = str(default['character'])
+    if settings['mode'] == "chat":
+        if settings['history_file'] != "n":
+            try:
+                history = read_history(settings['history_file'])
+            except:
+                pass
+    if sys.argv[1].lower() != "--instruct" and sys.argv[1].lower() != "--chat":
+        for arg in sys.argv[1:]:
+            user_message = user_message + " " + arg
+    else:
+        for arg in sys.argv[2:]:
+            user_message = user_message + " " + arg
+    user_message = expand_url(user_message)
+    assistant_message = generate_ai_response(history, user_message, settings)
     assistant_message = assistant_message.replace("</s>","")
+    if settings['mode'] == "chat":
+        history.append((user_message, assistant_message))
+        if settings['history_file'] != "n":
+            write_history(history,settings['history_file'])
     print(assistant_message)
 
 if len(sys.argv)==1:
 # This code initializes the user interface, retrieves the user's settings, and resets the screen. 
     change_options = start_interface(default)
     settings = initialize_settings(change_options, default)
+    if settings['history_file'] != "n":
+        try:
+            history = read_history(settings['history_file'])
+        except:
+            pass
     reset_screen()
 
 # This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
@@ -305,3 +347,5 @@ if len(sys.argv)==1:
         if settings['mode'] == "chat":
             history.append((user_message, assistant_message))
         output_result(assistant_message, settings['printer_toggle'])
+        if settings['history_file'] != "n":
+            write_history(history,settings['history_file'])

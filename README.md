@@ -40,6 +40,8 @@ OPENAI_API_CHARACTER: Sets the name of the character to interact with in "chat" 
 
 OPENAI_API_SYSTEM: Sets the "system" prompt used in "instruct" mode. Defaults to a boring but multipurpose: "You are a helpful assistant, answer any request from the user."
 
+PYPROMPT_HISTORY: If you want to save and load a conversation history in chat mode, this is where you would set it; write a full path that you have write access to. If you enter "n" it will not save history between sessions. Defaults to "n".
+
 PYPROMPT_PRINTER: If you are the lucky owner of a DevTerm, setting "y" here will enable printouts on the thermal printer. Defaults to "n".
 
 Setting variables in Bash can be done with the command:
@@ -53,10 +55,19 @@ And in Powershell with:
 ```
 You can set them permanently in \~/.bashrc for a Linux bash shell or $PROFILE on Windows.
 
+## Command-line options:
+--chat : If prompting in non-interactive mode, overrides environment variable to force chat mode
+
+--instruct : If prompting in non-interactive mode, overrides environment variable to force instruct mode
+
 ## Usage:
 python pyprompt.py
 or
 python pyprompt.py Tell me a story about a brave sick girl
+or
+python pyprompt.py --chat Hi! What's your name?
+or
+python pyprompt.py --instruct Give me step-by-step instructions to put caramel at the center of a candy chocolate bar.
 
 ## Recommendation:
 For Powershell, I recommend setting the variables in your profile and making a function to invoke the command. To accomplish this in Powershell, you can add this to your $PROFILE:
