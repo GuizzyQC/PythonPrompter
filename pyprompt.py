@@ -24,6 +24,8 @@ default['character'] = os.environ.get("OPENAI_API_CHARACTER") or ""
 default['system'] = os.environ.get("OPENAI_API_SYSTEM") or "You are a helpful assistant, answer any request from the user."
 default['enforce'] = (os.environ.get("OPENAI_API_ENFORCE_MODEL") or "n").lower()
 default['history_file'] = (os.environ.get("PYPROMPT_HISTORY") or "n").lower()
+default['searx_url'] = (os.environ.get("PYPROMPT_SEARX_URL") or "n").lower()
+default['max_search_results'] = (os.environ.get("PYPROMPT_MAX_SEARCH_RESULTS") or 1)
 default['printer_toggle'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
 
 
@@ -63,6 +65,9 @@ def start_interface(default):
             print("Character: " + str(default['character']))
         if str(default['mode']) == "instruct":
             print("System prompt: " + str(default['system']))
+        if str(default['searx_url']) != "n":
+            print("Searx instance URL: " + str(default['searx_url']))
+            print("Number of search results to fetch: " + str(default['max_search_results']))
         if os.path.exists(printer):
             print("\nDevterm thermal printer detected!")
             print("Printer toggle: " + str(default['printer_toggle']))
@@ -144,6 +149,8 @@ def initialize_settings(change_options, default):
     settings['system'] = ""
     settings['character'] = ""
     settings['preset'] = ""
+    settings['searx_url'] = ""
+    settings['max_search_results'] = 1
     settings['printer_toggle'] = False
     settings['history_file'] = ""
     if change_options == "n":
@@ -161,6 +168,8 @@ def initialize_settings(change_options, default):
         if settings['mode'] == "instruct":
             settings['system'] = str(default['system'])
         settings['history_file'] = str(default['history_file'])
+        settings['searx_url'] = str(default['searx_url'])
+        settings['max_search_results'] = int(default['max_search_results'])
         if os.path.exists(printer):
             if str(default['printer_toggle']) == "y":
                 settings['printer_toggle'] = True
@@ -219,6 +228,8 @@ def initialize_settings(change_options, default):
         if settings['mode'] == "instruct":
             settings['system'] = str(input("Enter the base system prompt to use (empty for default: " + str(default['system']) + "): ") or str(default['system']))
         settings['history_file'] = str(input("Enter the history filename to load from and save history to, or n to not save (empty for default: " + str(default['history_file']) + "): ") or default['history_file'])
+        settings['searx_url'] = str(default['searx_url'])
+        settings['max_search_results'] = int(default['max_search_results'])
         if os.path.exists(printer):
             answer = ""
             while answer != "y" and answer != "n":
@@ -295,9 +306,47 @@ def read_history(file):
     history = json.load(f)
     return history
 
+def search_routine(string, settings): # This checks if you say "search ... about" something, and if the "Activate Searx integration" checkbox is ticked will search about that
+    def search_string(search_term, settings): # This is the main logic that sends the API request to Searx and returns the text to add to the context
+        print("Searching for" + search_term + "...")
+        r = requests.get(settings['searx_url'], params={'q': search_term,'format': 'json','pageno': '1'})
+        new_context = ""
+        try:
+            searchdata = r.json()
+            searchdata = searchdata['results']
+        except: 
+            new_context = "Could not find the results asked for"
+        else:
+            i = 0
+            while i < settings['max_search_results']:
+                print("Found " + str(searchdata[i]['url']))
+                new_context = new_context + expand_url(searchdata[i]['url']) + "\n"
+                i = i + 1
+        finally:
+            return new_context
+    interfering_symbols = ['\"', '\'']
+    commands = ['search']
+    marker = ['for']
+    lowstr = string.lower()
+    for s in interfering_symbols:
+        lowstr = lowstr.replace(s, '') 
+    if any(command in lowstr for command in commands) and any(case in lowstr for case in marker):
+        print("Found search term")
+        try:
+            instruction = string.split('search',1)[0]
+            search_command = string.split('search',1)[1]
+        except:
+            instruction = string.split('Search',1)[0]
+            search_command = string.split('Search',1)[1]
+        subject = search_command.split('for',1)[1]
+        return str(instruction + "Here is information about" + subject + " found online: " + search_string(subject, settings))
+    else:
+        return string
+
 if len(sys.argv) > 1:
     settings = initialize_settings("n", default)
     user_message = ""
+    expanded_message = ""
     url = ""
     if sys.argv[1].lower() == "--instruct":
         settings['mode'] = "instruct"
@@ -317,11 +366,14 @@ if len(sys.argv) > 1:
     else:
         for arg in sys.argv[2:]:
             user_message = user_message + " " + arg
-    user_message = expand_url(user_message)
-    assistant_message = generate_ai_response(history, user_message, settings)
+    expanded_message = expand_url(user_message)
+    if expanded_message == user_message:
+        if settings['searx_url'] != "n":
+            expanded_message = search_routine(user_message, settings)
+    assistant_message = generate_ai_response(history, expanded_message, settings)
     assistant_message = assistant_message.replace("</s>","")
     if settings['mode'] == "chat":
-        history.append((user_message, assistant_message))
+        history.append((expanded_message, assistant_message))
         if settings['history_file'] != "n":
             write_history(history,settings['history_file'])
     print(assistant_message)
@@ -339,13 +391,17 @@ if len(sys.argv)==1:
 
 # This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
     while True:
+        expanded_message = ""
         user_message = input("> ")
         output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
-        user_message = expand_url(user_message)
-        assistant_message = generate_ai_response(history, user_message, settings)
+        expanded_message = expand_url(user_message)
+        if expanded_message == user_message:
+            if settings['searx_url'] != "n":
+                expanded_message = search_routine(user_message, settings)
+        assistant_message = generate_ai_response(history, expanded_message, settings)
         assistant_message = assistant_message.replace("</s>","")
         if settings['mode'] == "chat":
-            history.append((user_message, assistant_message))
+            history.append((expanded_message, assistant_message))
         output_result(assistant_message, settings['printer_toggle'])
         if settings['history_file'] != "n":
             write_history(history,settings['history_file'])
