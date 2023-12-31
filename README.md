@@ -28,17 +28,17 @@ OPENAI_API_BASE: Sets your API's endpoint. Defaults to "https://api.openai.com/v
 
 OPENAI_API_KEY: Sets your API key.
 
-OPENAI_API_ENFORCE_MODEL: Choose "y" or "n" to define whether you want the software to force the API endpoint to use another model than is currently running on it, useful for text-generation-webui which exposes multiple possible models.
+PYPROMPT_ENFORCE_MODEL: Choose "y" or "n" to define whether you want the software to force the API endpoint to use another model than is currently running on it, useful for text-generation-webui which exposes multiple possible models.
 
-OPENAI_API_MODEL: Sets the model used by your endpoint of you set y to OPENAI_API_ENFORCE_MODEL, useful for text-generation-webui which exposes multiple possible models.
+PYPROMPT_MODEL: Sets the model used by your endpoint of you set y to PYPROMPT_ENFORCE_MODEL, useful for text-generation-webui which exposes multiple possible models.
 
-OPENAI_API_PRESET: Sets the preset used by your endpoint, provided you are enforcing the model. Useful for text-generation-webui which exposes multiple possible presets. Defaults to "Divine Intellect"
+PYPROMPT_PRESET: Sets the preset used by your endpoint, provided you are enforcing the model. Useful for text-generation-webui which exposes multiple possible presets. Defaults to "Divine Intellect"
 
-OPENAI_API_MODE: Sets whether to use "chat" mode or "instruct" mode. Defaults to "instruct"
+PYPROMPT_MODE: Sets whether to use "chat" mode or "instruct" mode. Defaults to "instruct"
 
-OPENAI_API_CHARACTER: Sets the name of the character to interact with in "chat" mode. Make sure this character exists.
+PYPROMPT_CHARACTER: Sets the name of the character to interact with in "chat" mode. Make sure this character exists.
 
-OPENAI_API_SYSTEM: Sets the "system" prompt used in "instruct" mode. Defaults to a boring but multipurpose: "You are a helpful assistant, answer any request from the user."
+PYPROMPT_SYSTEM: Sets the "system" prompt used in "instruct" mode. Defaults to a boring but multipurpose: "You are a helpful assistant, answer any request from the user."
 
 PYPROMPT_HISTORY: If you want to save and load a conversation history in chat mode, this is where you would set it; write a full path that you have write access to. If you enter "n" it will not save history between sessions. Defaults to "n".
 
@@ -46,12 +46,12 @@ PYPROMPT_PRINTER: If you are the lucky owner of a DevTerm, setting "y" here will
 
 Setting variables in Bash can be done with the command:
 ``` bash
-export OPENAI_API_MODEL=Nous-Capybara-34b.Q5_K_M-GGUF
+export PYPROMPT_MODEL=Nous-Capybara-34b.Q5_K_M-GGUF
 ```
 
 And in Powershell with:
 ``` powershell
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_MODEL','Nous-Capybara-34b.Q5_K_M-GGUF')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_MODEL','Nous-Capybara-34b.Q5_K_M-GGUF')
 ```
 You can set them permanently in \~/.bashrc for a Linux bash shell or $PROFILE on Windows.
 
@@ -74,11 +74,11 @@ For Powershell, I recommend setting the variables in your profile and making a f
 ``` powershell
 [System.Environment]::SetEnvironmentVariable('OPENAI_API_BASE','https://api.openai.com/v1')
 [System.Environment]::SetEnvironmentVariable('OPENAI_API_KEY','')
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_MODE','instruct')
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_SYSTEM','You are a helpful assistant, helping the user accomplish any task on their computer.')
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_CHARACTER','')
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_ENFORCE_MODEL','y')
-[System.Environment]::SetEnvironmentVariable('OPENAI_API_MODEL','Nous-Capybara-34b.Q5_K_M-GGUF')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_MODE','instruct')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_SYSTEM','You are a helpful assistant, helping the user accomplish any task on their computer.')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_CHARACTER','')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_ENFORCE_MODEL','y')
+[System.Environment]::SetEnvironmentVariable('PYPROMPT_MODEL','Nous-Capybara-34b.Q5_K_M-GGUF')
 function Call-AI { C:\Users\YOURUSER\AppData\Local\Programs\Python\Python311\python.exe C:\PATH\TO\PythonPrompter\pyprompt.py $args }
 ```
 Making sure of course to change the variables and that the path to your Python interpreter is correct and the path to pyprompt.py is correct.
