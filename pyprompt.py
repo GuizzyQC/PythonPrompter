@@ -1,6 +1,7 @@
 # Python Prompter
 # By: GuizzyQC
 
+import argparse
 import requests
 import json
 import os
@@ -14,7 +15,21 @@ default = dict()
 history = []
 printer = "/tmp/DEVTERM_PRINTER_IN"
 max_text_length = 16000 
-banner = "*************************\nWelcome to PythonPrompter\n*************************\nYou can press Ctrl-C at any time to exit\n"
+banner = "*************************\nWelcome to PythonPrompter\n*************************\nType (quit) at the main prompt to exit\nType (search:search term) at the start of a prompt to feed search results\n"
+parser = argparse.ArgumentParser(description='OpenAI API Prompter')
+parser.add_argument('prompt', type=str, nargs="?",
+                    help='text to prompt the API with')
+parser.add_argument('--mode', choices=['instruct', 'chat'],
+                    help='select prompting mode')
+parser.add_argument('--character',
+                    help='enter character to prompt with')
+parser.add_argument('--system',
+                    help='enter system prompt to use')
+parser.add_argument('--search', action='append',
+                    help='enter search terms to find')
+parser.add_argument('rest', nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
+
+args = parser.parse_args()
 
 default['url'] = os.environ.get("OPENAI_API_BASE") or "https://api.openai.com/v1"
 default['api_key'] = os.environ.get("OPENAI_API_KEY") or ""
@@ -365,9 +380,9 @@ def read_history(file):
     history = json.load(f)
     return history
 
-def search_routine(string, settings): # This checks if you say "search ... about" something, and if the "Activate Searx integration" checkbox is ticked will search about that
+def search_routine(string, settings, direct=False): # This checks if you say "search ... about" something, and if the "Activate Searx integration" checkbox is ticked will search about that
     def search_string(search_term, settings): # This is the main logic that sends the API request to Searx and returns the text to add to the context
-        print("Searching for" + search_term + "...")
+        print("Searching for " + search_term + "...")
         r = requests.get(settings['searx_url'], params={'q': search_term,'format': 'json','pageno': '1'}, headers=settings['searx_headers'], timeout=30, verify=True)
         new_context = ""
         try:
@@ -383,47 +398,53 @@ def search_routine(string, settings): # This checks if you say "search ... about
                 i = i + 1
         finally:
             return new_context
-    interfering_symbols = ['\"', '\'']
-    commands = ['search']
-    marker = ['for']
-    lowstr = string.lower()
-    for s in interfering_symbols:
-        lowstr = lowstr.replace(s, '') 
-    if any(command in lowstr for command in commands) and any(case in lowstr for case in marker):
-        print("Found search term")
-        try:
-            instruction = string.split('search',1)[0]
-            search_command = string.split('search',1)[1]
-        except:
-            instruction = string.split('Search',1)[0]
-            search_command = string.split('Search',1)[1]
-        subject = search_command.split('for',1)[1]
-        return str(instruction + "\nHere is information about" + subject + " found online: " + search_string(subject, settings))
+    if direct:
+        return str("\nHere is information about " + string + " found online: " + search_string(string, settings))
     else:
-        return string
+        interfering_symbols = ['\"', '\'']
+        commands = ['search']
+        marker = ['for']
+        lowstr = string.lower()
+        for s in interfering_symbols:
+            lowstr = lowstr.replace(s, '') 
+        if any(command in lowstr for command in commands) and any(case in lowstr for case in marker):
+            print("Found search term")
+            try:
+                instruction = string.split('search',1)[0]
+                search_command = string.split('search',1)[1]
+            except:
+                instruction = string.split('Search',1)[0]
+                search_command = string.split('Search',1)[1]
+            subject = search_command.split('for',1)[1].lstrip()
+            return str(instruction + "\nHere is information about " + subject + " found online: " + search_string(subject, settings))
+        else:
+            return string
 
-if len(sys.argv) > 1:
+if args.prompt:
     settings = initialize_settings("n", default)
+
+    if args.mode:
+        settings['mode'] = args.mode
+
+    if args.character:
+        settings['character'] = args.character
+
+    if args.system:
+        settings['system'] = args.system
+
     user_message = ""
     url = ""
-    if sys.argv[1].lower() == "--instruct":
-        settings['mode'] = "instruct"
-        settings['system'] = str(default['system'])
-    if sys.argv[1].lower() == "--chat":
-        settings['mode'] = "chat"
-        settings['character'] = str(default['character'])
     if settings['mode'] == "chat":
         if settings['history_file'] != "n":
             try:
                 history = read_history(settings['history_file'])
             except:
                 pass
-    if sys.argv[1].lower() != "--instruct" and sys.argv[1].lower() != "--chat":
-        for arg in sys.argv[1:]:
+    user_message = args.prompt
+    if args.rest:
+        for arg in args.rest:
             user_message = user_message + " " + arg
-    else:
-        for arg in sys.argv[2:]:
-            user_message = user_message + " " + arg
+
     extracted_urls = extract_url(user_message)
     if len(extracted_urls) > 0:
         i = 0
@@ -434,6 +455,9 @@ if len(sys.argv) > 1:
     else:
         if settings['searx_url'] != "n":
             user_message = search_routine(user_message, settings)
+    if args.search:
+        for s in args.search:
+            user_message = user_message + search_routine(s, settings, True)
     if settings['streaming']:
         assistant_message = generate_streaming_response(history, user_message, settings)
     else:
@@ -447,10 +471,21 @@ if len(sys.argv) > 1:
     else:
         output_result(assistant_message, settings['printer_toggle'])
 
-if len(sys.argv)==1:
+if not args.prompt:
 # This code initializes the user interface, retrieves the user's settings, and resets the screen. 
+
+    if args.mode:
+        default['mode'] = args.mode
+
+    if args.character:
+        default['character'] = args.character
+
+    if args.system:
+        default['system'] = args.system
+
     change_options = start_interface(default)
     settings = initialize_settings(change_options, default)
+
     if settings['history_file'] != "n":
         try:
             history = read_history(settings['history_file'])
@@ -461,6 +496,15 @@ if len(sys.argv)==1:
 # This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
     while True:
         user_message = input("> ")
+        if user_message == "(quit)":
+            sys.exit()
+
+        if ("(search:" in user_message and ")" in user_message):
+            search_terms = re.findall(r"(?<=\(search:)(.*?)(?=\))", user_message)
+            user_message = user_message.rsplit(")")[1] 
+            for s in search_terms:
+                user_message = user_message + search_routine(s, settings, True)
+
         output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
         extracted_urls = extract_url(user_message)
         if len(extracted_urls) > 0:
