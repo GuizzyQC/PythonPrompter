@@ -498,13 +498,6 @@ if not args.prompt:
         user_message = input("> ")
         if user_message == "(quit)":
             sys.exit()
-
-        if ("(search:" in user_message and ")" in user_message):
-            search_terms = re.findall(r"(?<=\(search:)(.*?)(?=\))", user_message)
-            user_message = user_message.rsplit(")")[1] 
-            for s in search_terms:
-                user_message = user_message + search_routine(s, settings, True)
-
         output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
         extracted_urls = extract_url(user_message)
         if len(extracted_urls) > 0:
@@ -515,7 +508,14 @@ if not args.prompt:
                 i = i + 1
         else:
             if settings['searx_url'] != "n":
-                user_message = search_routine(user_message, settings)
+                if ("(search:" in user_message and ")" in user_message):
+                    search_terms = re.findall(r"(?<=\(search:)(.*?)(?=\))", user_message)
+                    user_message = user_message.rsplit(")",1)[1] 
+                    for s in search_terms:
+                        user_message = user_message + search_routine(s, settings, True)
+                else:
+                    user_message = search_routine(user_message, settings)
+
         if settings['streaming']:
             assistant_message = generate_streaming_response(history, user_message, settings)
             print("\n")
