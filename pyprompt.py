@@ -113,7 +113,7 @@ def enforce_model(settings):
             print(">>> Please be patient, changing model to " + str(settings['model']))
             data = {
                 'model_name': settings['model'],
-                'settings': { "preset": settings['preset'], "custom_stopping_strings": '\"</s>\"' }
+                'settings': { "preset": settings['preset'] }
             }
             response = requests.post(settings['url'] + "/internal/model/load", headers=settings['headers'], json=data, timeout=60, verify=True)
     except Exception as e:
@@ -132,6 +132,7 @@ def generate_ai_response(chat_history, prompt, settings):
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
+                'max_tokens': 2000,
                 'messages': messages,
                 'mode': 'chat',
                 'character': settings['character'],
@@ -141,6 +142,7 @@ def generate_ai_response(chat_history, prompt, settings):
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
+                'max_tokens': 2000,
                 'messages': messages,
             }
         response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
@@ -550,4 +552,12 @@ if not args.prompt:
             assistant_message = generate_streaming_response(history, user_message, settings)
             print("\n")
         else:
-            assistant_message = generate_ai_
+            assistant_message = generate_ai_response(history, user_message, settings)
+        if settings['mode'] == "chat":
+            history.append((user_message, assistant_message))
+        if settings['streaming']:
+            output_result(assistant_message, settings['printer_toggle'], False)
+        else:
+            output_result(assistant_message, settings['printer_toggle'])
+        if settings['history_file'] != "n":
+            write_history(history,settings['history_file'])
