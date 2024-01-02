@@ -56,18 +56,30 @@ And in Powershell with:
 You can set them permanently in \~/.bashrc for a Linux bash shell or $PROFILE on Windows.
 
 ## Command-line options:
---chat : If prompting in non-interactive mode, overrides environment variable to force chat mode
+usage: pyprompt.py [-h] [--mode {instruct,chat}] [--character CHARACTER] [--system SYSTEM] [--search SEARCH] [prompt]
 
---instruct : If prompting in non-interactive mode, overrides environment variable to force instruct mode
+OpenAI API Prompter
+
+positional arguments:
+  prompt                text to prompt the API with
+
+options:
+  -h, --help            show this help message and exit
+  --mode {instruct,chat}
+                        select prompting mode
+  --character CHARACTER
+                        enter character to prompt with
+  --system SYSTEM       enter system prompt to use
+  --search SEARCH       enter search terms to find
 
 ## Usage:
 python pyprompt.py
 or
 python pyprompt.py Tell me a story about a brave sick girl
 or
-python pyprompt.py --chat Hi! What's your name?
+python pyprompt.py --mode chat Hi! What's your name?
 or
-python pyprompt.py --instruct Give me step-by-step instructions to put caramel at the center of a candy chocolate bar.
+python pyprompt.py --mode instruct --system "You are a helpful AI" Give me step-by-step instructions to put caramel at the center of a candy chocolate bar.
 
 ## Recommendation:
 For Powershell, I recommend setting the variables in your profile and making a function to invoke the command. To accomplish this in Powershell, you can add this to your $PROFILE:

@@ -21,6 +21,8 @@ parser.add_argument('prompt', type=str, nargs="?",
                     help='text to prompt the API with')
 parser.add_argument('--mode', choices=['instruct', 'chat'],
                     help='select prompting mode')
+parser.add_argument('--direct', action='store_true',
+                    help='skip settings and use defaults')
 parser.add_argument('--character',
                     help='enter character to prompt with')
 parser.add_argument('--system',
@@ -98,7 +100,7 @@ def start_interface(default):
 
 # This function clears the terminal screen and prints a banner. 
 def reset_screen():
-    if len(sys.argv)==1:
+    if not args.prompt:
         os.system('cls||clear')
         print(banner)
 
@@ -387,17 +389,41 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
         new_context = ""
         try:
             searchdata = r.json()
-            searchdata = searchdata['results']
+            resultsdata = searchdata['results']
+            infodata = searchdata['infoboxes']
+            answerdata = searchdata['answers']
         except: 
             new_context = "Could not find the results asked for"
-        else:
-            i = 0
-            while i < settings['max_urls']:
-                print("Found " + str(searchdata[i]['url']))
-                new_context = new_context + expand_url(searchdata[i]['url']) + "\n"
-                i = i + 1
-        finally:
-            return new_context
+        try:
+            if resultsdata[0]['url']:
+                i = 0
+                while i < settings['max_urls']:
+                    print("Found " + str(resultsdata[i]['url']))
+                    new_context = new_context + expand_url(resultsdata[i]['url']) + "\n"
+                    i = i + 1
+        except:
+            pass
+        try:
+            if infodata[0]['infobox']:
+                i = 0
+                while i < settings['max_urls']:
+                    print("Found " + str(infodata[i]['infobox']))
+                    new_context = new_context + "Information in HTML format: " + infodata[i]['content'] + "\n"
+                    i = i + 1
+        except:
+            pass
+        try:
+            if answerdata[0]['answer']:
+                i = 0
+                while i < settings['max_urls']:
+                    print("Found " + str(answerdata[i]['answer']))
+                    new_context = new_context + "Answer found online: " + answerdata[i]['content'] + "\n"
+                    i = i + 1
+        except:
+            pass
+        if new_context == "":
+            new_context = "Could not find the results asked for"
+        return new_context
     if direct:
         return str("\nHere is information about " + string + " found online: " + search_string(string, settings))
     else:
@@ -483,8 +509,12 @@ if not args.prompt:
     if args.system:
         default['system'] = args.system
 
-    change_options = start_interface(default)
-    settings = initialize_settings(change_options, default)
+    if args.direct:
+        reset_screen()
+        settings = initialize_settings("n", default)
+    else:
+        change_options = start_interface(default)
+        settings = initialize_settings(change_options, default)
 
     if settings['history_file'] != "n":
         try:
@@ -520,12 +550,4 @@ if not args.prompt:
             assistant_message = generate_streaming_response(history, user_message, settings)
             print("\n")
         else:
-            assistant_message = generate_ai_response(history, user_message, settings)
-        if settings['mode'] == "chat":
-            history.append((user_message, assistant_message))
-        if settings['streaming']:
-            output_result(assistant_message, settings['printer_toggle'], False)
-        else:
-            output_result(assistant_message, settings['printer_toggle'])
-        if settings['history_file'] != "n":
-            write_history(history,settings['history_file'])
+            assistant_message = generate_ai_
