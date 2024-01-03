@@ -12,7 +12,7 @@ Caution: Tested with Oobabooga's text-generation-webui, not tested with another 
 ## Requirements:
 Python 3
 
-Libraries: requests and BeautifulSoup4
+Libraries: tiktoken, requests, sseclient and BeautifulSoup4
 
 ## Installation:
 git clone https://github.com/GuizzyQC/PythonPrompter

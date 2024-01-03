@@ -9,13 +9,17 @@ import sys
 import re
 import shlex 
 import sseclient
+import tiktoken
 from bs4 import BeautifulSoup
+
+printer = "/tmp/DEVTERM_PRINTER_IN"
+max_text_length = 16000
+max_tokens = 16000
+banner = "*************************\nWelcome to PythonPrompter\n*************************\nType (quit) at the main prompt to exit\nType (search:search term) at the start of a prompt to feed search results\nType (continue) to continue previous answer\n"
 
 default = dict()
 history = []
-printer = "/tmp/DEVTERM_PRINTER_IN"
-max_text_length = 16000 
-banner = "*************************\nWelcome to PythonPrompter\n*************************\nType (quit) at the main prompt to exit\nType (search:search term) at the start of a prompt to feed search results\n"
+
 parser = argparse.ArgumentParser(description='OpenAI API Prompter')
 parser.add_argument('prompt', type=str, nargs="?",
                     help='text to prompt the API with')
@@ -60,6 +64,7 @@ def output_result(string, output_to_printer=False, echo=True):
 # Hide a string for display, will only show the length of the string
 def star(string):
     return ''.join('*' * len(string))
+
 
 # This function starts the interface by printing the banner, displaying the current settings, and asking the user if they want to change the settings. 
 # It returns a string indicating whether the user wants to change the settings or not. 
@@ -120,43 +125,63 @@ def enforce_model(settings):
         print(f"Error setting model: {str(e)}")
 
 # This function generates an AI response based on the chat history and new question provided. It uses the given settings to determine the behavior of the AI. It first checks if the model is not set to "n" and enforces the model if necessary. Then, it creates a list of messages based on the chat history and new questions. Depending on the mode, it adds either a user or system message to the messages list. Finally, it sends a POST request to the URL with the data and headers, and returns the AI's response message. If there is an error during the process, it prints an error message.
-def generate_ai_response(chat_history, prompt, settings):
+def generate_ai_response(chat_history, prompt, settings, mode):
     try:
         if settings['model'] != "n":
             enforce_model(settings)
         messages = []
-        if settings['mode'] == "chat":
+        if mode == "completion":
+            data = {
+                'stream': False,
+                'prompt': prompt,
+            }
+            response = requests.post(settings['url'] + "/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
+            assistant_message = response.json()['choices'][0]['text']
+        if mode == "chat":
             for question, answer in chat_history:
                 messages.append({"role": "user", "content": question})
                 messages.append({"role": "assistant", "content": answer})
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
-                'max_tokens': 2000,
                 'messages': messages,
                 'mode': 'chat',
                 'character': settings['character'],
             }
-        if settings['mode'] == "instruct":
+            response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
+            assistant_message = response.json()['choices'][0]['message']['content']
+
+        if mode == "instruct":
             messages.append({"role": "system", "content": settings['system']})
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
-                'max_tokens': 2000,
                 'messages': messages,
             }
-        response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
-        assistant_message = response.json()['choices'][0]['message']['content']
+            response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
+            assistant_message = response.json()['choices'][0]['message']['content']
         return(assistant_message)
     except Exception as e:
         print(f"Error generating response: {str(e)}")
 
-def generate_streaming_response(chat_history, prompt, settings):
-#    try:
+def generate_streaming_response(chat_history, prompt, settings, mode):
     if settings['model'] != "n":
         enforce_model(settings)
     messages = []
-    if settings['mode'] == "chat":
+    if mode == "completion":
+        data = {
+            'stream': True,
+            'prompt': prompt,
+        }
+        response = requests.post(settings['url'] + "/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
+        client = sseclient.SSEClient(response)
+        assistant_message = ""
+        for event in client.events():
+            payload = json.loads(event.data)
+            chunk = payload['choices'][0]['text']
+            assistant_message += chunk
+            print(chunk, end='')
+    if mode == "chat":
         for question, answer in chat_history:
             messages.append({"role": "user", "content": question})
             messages.append({"role": "assistant", "content": answer})
@@ -167,24 +192,30 @@ def generate_streaming_response(chat_history, prompt, settings):
             'mode': 'chat',
             'character': settings['character'],
         }
-    if settings['mode'] == "instruct":
+        response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
+        client = sseclient.SSEClient(response)
+        assistant_message = ""
+        for event in client.events():
+            payload = json.loads(event.data)
+            chunk = payload['choices'][0]['message']['content']
+            assistant_message += chunk
+            print(chunk, end='')
+    if mode == "instruct":
         messages.append({"role": "system", "content": settings['system']})
         messages.append({"role": "user", "content": prompt})
         data = {
             'stream': True,
             'messages': messages,
         }
-    response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
-    client = sseclient.SSEClient(response)
-    assistant_message = ""
-    for event in client.events():
-        payload = json.loads(event.data)
-        chunk = payload['choices'][0]['message']['content']
-        assistant_message += chunk
-        print(chunk, end='')
+        response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
+        client = sseclient.SSEClient(response)
+        assistant_message = ""
+        for event in client.events():
+            payload = json.loads(event.data)
+            chunk = payload['choices'][0]['message']['content']
+            assistant_message += chunk
+            print(chunk, end='')
     return(assistant_message)
-#    except Exception as e:
-#        print(f"Error generating response: {str(e)}")
 
 # This function initializes settings for an application by prompting the user for input and using default values if specified. It returns a dictionary containing the settings. 
 def initialize_settings(change_options, default):
@@ -335,18 +366,19 @@ def extract_url(prompt):
     urls = re.findall(url_pattern, prompt.lower())
     return urls
 
+def trim_to_x_words(prompt, limit):
+    rev_rs = []
+    words = prompt.split(" ")
+    rev_words = reversed(words)
+    for w in rev_words:
+        rev_rs.append(w)
+        limit -= 1
+        if limit <= 0:
+            break
+    rs = reversed(rev_rs)
+    return " ".join(rs)
+
 def expand_url(url):
-    def trim_to_x_words(prompt, limit):
-        rev_rs = []
-        words = prompt.split(" ")
-        rev_words = reversed(words)
-        for w in rev_words:
-            rev_rs.append(w)
-            limit -= 1
-            if limit <= 0:
-                break
-        rs = reversed(rev_rs)
-        return " ".join(rs)
     text = f"The web page at {url} doesn't have any useable content. Sorry."
     try:
         response = requests.get(url)
@@ -384,8 +416,38 @@ def read_history(file):
     history = json.load(f)
     return history
 
+def trim_to_max_tokens(string, reverse=False):
+    def count_token(string):
+        token_counter = tiktoken.get_encoding("cl100k_base")
+        return len(token_counter.encode(string))
+    if count_token(string) > max_tokens:
+        print("Context too long, truncating context")
+        print("Original context: " + str(count_token(string)))
+        while count_token(string) > max_tokens:
+            new_length = len(string) - 100
+            if reverse:
+                string = string[new_length:]
+            else:
+                string = string[:new_length]
+        print("New context: " + str(count_token(string)))
+    return string
+
+
 def search_routine(string, settings, direct=False): # This checks if you say "search ... about" something, and if the "Activate Searx integration" checkbox is ticked will search about that
     def search_string(search_term, settings): # This is the main logic that sends the API request to Searx and returns the text to add to the context
+        def html_table_to_text(html_string):
+            soup = BeautifulSoup(html_string, 'html.parser')
+            tables = soup.find_all('table')
+            rows = []
+            text = ""
+            for table in tables:
+                for row in table.find_all('tr'):
+                    row_text = [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+                    rows.append(row_text)
+            for row in rows:
+                    text = text + " ".join(row) + "\n"
+            return text
+
         print("Searching for " + search_term + "...")
         r = requests.get(settings['searx_url'], params={'q': search_term,'format': 'json','pageno': '1'}, headers=settings['searx_headers'], timeout=30, verify=True)
         new_context = ""
@@ -410,7 +472,7 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
                 i = 0
                 while i < settings['max_urls']:
                     print("Found " + str(infodata[i]['infobox']))
-                    new_context = new_context + "Information in HTML format: " + infodata[i]['content'] + "\n"
+                    new_context = new_context + "Information in HTML format: " + trim_to_x_words(html_table_to_text(str(infodata[i]['content'])), max_text_length) + "\n"
                     i = i + 1
         except:
             pass
@@ -419,13 +481,13 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
                 i = 0
                 while i < settings['max_urls']:
                     print("Found " + str(answerdata[i]['answer']))
-                    new_context = new_context + "Answer found online: " + answerdata[i]['content'] + "\n"
+                    new_context = new_context + "Answer found online: " + trim_to_x_words(str(answerdata[i]['content']), max_text_length) + "\n"
                     i = i + 1
         except:
             pass
         if new_context == "":
             new_context = "Could not find the results asked for"
-        return new_context
+        return trim_to_max_tokens(new_context)
     if direct:
         return str("\nHere is information about " + string + " found online: " + search_string(string, settings))
     else:
@@ -487,9 +549,9 @@ if args.prompt:
         for s in args.search:
             user_message = user_message + search_routine(s, settings, True)
     if settings['streaming']:
-        assistant_message = generate_streaming_response(history, user_message, settings)
+        assistant_message = generate_streaming_response(history, user_message, settings, settings['mode'])
     else:
-        assistant_message = generate_ai_response(history, user_message, settings)
+        assistant_message = generate_ai_response(history, user_message, settings, settings['mode'])
     if settings['mode'] == "chat":
         history.append((user_message, assistant_message))
         if settings['history_file'] != "n":
@@ -530,29 +592,37 @@ if not args.prompt:
         user_message = input("> ")
         if user_message == "(quit)":
             sys.exit()
-        output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
-        extracted_urls = extract_url(user_message)
-        if len(extracted_urls) > 0:
-            i = 0
-            for url in extracted_urls:
-                if i < settings['max_urls']:
-                    user_message = user_message + "\n" + expand_url(url)
-                i = i + 1
+        if user_message == "(continue)":
+            if settings['streaming']:
+                assistant_message = generate_streaming_response([], previous_message + "\n\n" + assistant_message, settings, "completion")
+                print("\n")
+            else:
+                assistant_message = generate_ai_response([], previous_message + "\n" + assistant_message, settings, "completion")
+                print("\n")
         else:
-            if settings['searx_url'] != "n":
-                if ("(search:" in user_message and ")" in user_message):
-                    search_terms = re.findall(r"(?<=\(search:)(.*?)(?=\))", user_message)
-                    user_message = user_message.rsplit(")",1)[1] 
-                    for s in search_terms:
-                        user_message = user_message + search_routine(s, settings, True)
-                else:
-                    user_message = search_routine(user_message, settings)
+            output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
+            extracted_urls = extract_url(user_message)
+            if len(extracted_urls) > 0:
+                i = 0
+                for url in extracted_urls:
+                    if i < settings['max_urls']:
+                        user_message = user_message + "\n" + expand_url(url)
+                    i = i + 1
+            else:
+                if settings['searx_url'] != "n":
+                    if ("(search:" in user_message and ")" in user_message):
+                        search_terms = re.findall(r"(?<=\(search:)(.*?)(?=\))", user_message)
+                        user_message = user_message.rsplit(")",1)[1] 
+                        for s in search_terms:
+                            user_message = user_message + search_routine(s, settings, True)
+                    else:
+                        user_message = search_routine(user_message, settings)
 
-        if settings['streaming']:
-            assistant_message = generate_streaming_response(history, user_message, settings)
-            print("\n")
-        else:
-            assistant_message = generate_ai_response(history, user_message, settings)
+            if settings['streaming']:
+                assistant_message = generate_streaming_response(history, user_message, settings, settings['mode'])
+                print("\n")
+            else:
+                assistant_message = generate_ai_response(history, user_message, settings, settings['mode'])
         if settings['mode'] == "chat":
             history.append((user_message, assistant_message))
         if settings['streaming']:
@@ -561,3 +631,4 @@ if not args.prompt:
             output_result(assistant_message, settings['printer_toggle'])
         if settings['history_file'] != "n":
             write_history(history,settings['history_file'])
+        previous_message = user_message
