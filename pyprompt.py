@@ -5,6 +5,7 @@ import argparse
 import requests
 import json
 import os
+import io
 import sys
 import re
 import shlex 
@@ -12,7 +13,12 @@ import sseclient
 import tiktoken
 from bs4 import BeautifulSoup
 
-printer = "/tmp/DEVTERM_PRINTER_IN"
+#import PyPDF2
+#from ebooklib import epub
+#from bs4 import Tag
+#from urllib.parse import urljoin
+
+printer_target = "/tmp/DEVTERM_PRINTER_IN"
 max_text_length = 16000
 max_tokens = 16000
 banner = "*************************\nWelcome to PythonPrompter\n*************************\nType (quit) at the main prompt to exit\nType (search:search term) at the start of a prompt to feed search results\nType (continue) to continue previous answer\n"
@@ -22,17 +28,42 @@ history = []
 
 parser = argparse.ArgumentParser(description='OpenAI API Prompter')
 parser.add_argument('prompt', type=str, nargs="?",
-                    help='text to prompt the API with')
+                help='text to prompt the API with')
+parser.add_argument('--url', type=str,
+                help='enter OpenAI API address')
+parser.add_argument('--api_key', type=str,
+                help='enter OpenAI API key')
+parser.add_argument('--enforce', action='store_true',
+                help='force model loading')
+parser.add_argument('--no_enforce', action='store_true',
+                help='disable model loading')
+parser.add_argument('--model', type=str,
+                help='enter model to load')
+parser.add_argument('--streaming', action='store_true',
+                help='enable streaming')
+parser.add_argument('--no_streaming', action='store_true',
+                help='disable streaming')
+parser.add_argument('--preset', type=str,
+                help='enter preset to load')
+parser.add_argument('--history', type=str,
+                help='enter history file to save chats to')
+parser.add_argument('--searx_url', type=str,
+                help='enter searx instance url')
+parser.add_argument('--searx_api_key', type=str,
+                help='enter searx instance api key')
 parser.add_argument('--mode', choices=['instruct', 'chat'],
-                    help='select prompting mode')
+                help='select prompting mode')
 parser.add_argument('--direct', action='store_true',
-                    help='skip settings and use defaults')
-parser.add_argument('--character',
-                    help='enter character to prompt with')
-parser.add_argument('--system',
-                    help='enter system prompt to use')
-parser.add_argument('--search', action='append',
-                    help='enter search terms to find')
+                help='skip settings and use defaults')
+parser.add_argument('--character', type=str,
+                help='enter character to prompt with')
+parser.add_argument('--system', type=str,
+                help='enter system prompt to use')
+parser.add_argument('--search', type=str, action='append',
+                help='enter search terms to find')
+parser.add_argument('--max_urls', type=int, choices=range(1, 11),
+                help='enter the number of search results or the maximum number of urls to read')
+parser.add_argument('--printer', action='store_true', help=argparse.SUPPRESS)
 parser.add_argument('rest', nargs=argparse.REMAINDER, help=argparse.SUPPRESS)
 
 args = parser.parse_args()
@@ -46,11 +77,11 @@ default['character'] = os.environ.get("PYPROMPT_CHARACTER") or ""
 default['system'] = os.environ.get("PYPROMPT_SYSTEM") or "You are a helpful assistant, answer any request from the user."
 default['enforce'] = (os.environ.get("PYPROMPT_ENFORCE_MODEL") or "n").lower()
 default['streaming'] = (os.environ.get("PYPROMPT_STREAMING") or "n").lower()
-default['history_file'] = (os.environ.get("PYPROMPT_HISTORY") or "n").lower()
+default['history'] = (os.environ.get("PYPROMPT_HISTORY") or "n").lower()
 default['searx_url'] = (os.environ.get("PYPROMPT_SEARX_URL") or "n").lower()
 default['searx_api_key'] = (os.environ.get("PYPROMPT_SEARX_API_KEY") or "n")
-default['max_urls'] = (os.environ.get("PYPROMPT_MAX_URLS") or 1)
-default['printer_toggle'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
+default['max_urls'] = int(os.environ.get("PYPROMPT_MAX_URLS") or 1)
+default['printer'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
 
 
 # This function takes an output string and an optional echo parameter (default is 1) and prints the output to the console if echo is True. If the parameter output_to_printer is set to 'y', it also sends the output to a printer specified by the printer variable using the os.system command. 
@@ -59,7 +90,7 @@ def output_result(string, output_to_printer=False, echo=True):
         print(string)
     if output_to_printer:
         printer_command = "echo " + shlex.quote(string)
-        os.system(printer_command + " > " + printer)
+        os.system(printer_command + " > " + printer_target)
 
 # Hide a string for display, will only show the length of the string
 def star(string):
@@ -82,10 +113,10 @@ def start_interface(default):
         if str(default['enforce']) == "y":
             if str(default['model']) != "n":
                 print("Model: " + str(default['model']))
-        if str(default['history_file']) == "n":
+        if str(default['history']) == "n":
             print("History file: Do not save conversation history")
-        if str(default['history_file']) != "n":
-            print("History file: " + str(default['history_file']))
+        if str(default['history']) != "n":
+            print("History file: " + str(default['history']))
         print("Mode: " + str(default['mode']))
         if str(default['mode']) == "chat":
             print("Character: " + str(default['character']))
@@ -94,9 +125,9 @@ def start_interface(default):
         if str(default['searx_url']) != "n":
             print("Searx instance URL: " + str(default['searx_url']))
             print("Number of search results to fetch: " + str(default['max_urls']))
-        if os.path.exists(printer):
+        if os.path.exists(printer_target):
             print("\nDevterm thermal printer detected!")
-            print("Printer toggle: " + str(default['printer_toggle']))
+            print("Printer toggle: " + str(default['printer']))
         answer = ""
         while answer != "y" and answer != "n":
             answer = str(input("\nEnter y to change the settings: ")) or "n"
@@ -240,8 +271,8 @@ def initialize_settings(change_options, default):
     settings['searx_url'] = ""
     settings['searx_headers'] = ""
     settings['max_urls'] = 1
-    settings['printer_toggle'] = False
-    settings['history_file'] = ""
+    settings['printer'] = False
+    settings['history'] = ""
     if change_options == "n":
         settings['url'] = str(default['url'])
         settings['api_key'] = str(default['api_key'])
@@ -256,19 +287,19 @@ def initialize_settings(change_options, default):
             settings['character'] = str(default['character'])
         if settings['mode'] == "instruct":
             settings['system'] = str(default['system'])
-        settings['history_file'] = str(default['history_file'])
+        settings['history'] = str(default['history'])
         settings['searx_url'] = str(default['searx_url'])
         settings['searx_api_key'] = str(default['searx_api_key'])
         if settings['searx_api_key'].lower() == 'n':
             settings['searx_api_key'] = ''
         else:
             settings['searx_headers'] = generate_headers(settings['searx_api_key'])
-        settings['max_urls'] = int(default['max_urls'])
+        settings['max_urls'] = default['max_urls']
         if str(default['streaming']) == "y":
             settings['streaming'] = True
-        if os.path.exists(printer):
-            if str(default['printer_toggle']) == "y":
-                settings['printer_toggle'] = True
+        if os.path.exists(printer_target):
+            if str(default['printer']) == "y":
+                settings['printer'] = True
     if change_options == "y":
         settings['url'] = str(input("Enter the endpoint (empty for default: " + str(default['url']) + "): ") or default['url'])
         reset_screen()
@@ -318,7 +349,7 @@ def initialize_settings(change_options, default):
                 settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct (empty for " + str(default['mode']) + "): ") or str(default['mode'])).lower()
         reset_screen()
         while settings['mode'] == "chat" and settings['character'] == "":
-            settings['history_file'] = str(input("Enter the history filename to load from and save history to, or n to not save (empty for default: " + str(default['history_file']) + "): ") or default['history_file'])
+            settings['history'] = str(input("Enter the history filename to load from and save history to, or n to not save (empty for default: " + str(default['history']) + "): ") or default['history'])
             reset_screen()
             if default['character'] == "":
                 settings['character'] = str(input("Enter the character to embody: "))
@@ -348,14 +379,14 @@ def initialize_settings(change_options, default):
         if os.path.exists(printer):
             answer = ""
             while answer != "y" and answer != "n":
-                answer = str(input("Enter y to enable the printer (empty for default: " + str(default['printer_toggle'] +"): ")).lower() or str(default['printer_toggle'])).lower()
+                answer = str(input("Enter y to enable the printer (empty for default: " + str(default['printer'] +"): ")).lower() or str(default['printer'])).lower()
             if answer == "y":
-                settings['printer_toggle'] = True
+                settings['printer'] = True
             else:
-                settings['printer_toggle'] = False
+                settings['printer'] = False
     if len(sys.argv)==1:
         os.system('cls||clear')
-        output_result(banner, settings['printer_toggle'])
+        output_result(banner, settings['printer'])
     return settings
 
 def extract_url(prompt):
@@ -379,7 +410,60 @@ def trim_to_x_words(prompt, limit):
     return " ".join(rs)
 
 def expand_url(url):
+#    def extract_from_aa(url):
+#       print("extract_from_aa" + url)
+#        def parse_link(link):
+#            url = link.get("href")
+#            if url == "/datasets":
+#                return None
+#            if url[0] == "/":
+#                url = urljoin("https://annas-archive.org", url[1:])
+#            return url
+#        try:
+#            response = requests.get(url)
+#        except:
+#            print("Failed to fetch url")
+#            pass
+#        soup = BeautifulSoup(response.content, "html.parser")
+#        title = soup.find("div", class_="text-3xl font-bold").text
+#        print("Found " + title)
+#        authors = soup.find("div", class_="italic").text
+#        print("By " + authors)
+#        download_links: list[URL] = []
+#        for container in soup.find_all("a", class_="js-download-link"):
+#            link = parse_link(container)
+#            if link is not None:
+#                download_links.append(link)
+#        text = ""
+#        i = 0
+#        while text == "" and i < len(download_links):
+#            print(download_links[i])
+#            response = requests.get(download_links[i])
+#            print(str(response))
+#            if response.headers.get("content-type") == "application/epub":
+#                with io.BytesIO(response.content) as epub_file:
+#                    text = epub.read_epub(epub_file)
+#            if response.headers.get("content-type") == "application/pdf":
+#                with io.BytesIO(response.content) as pdf_file:
+#                    read_pdf = PyPDF2.PdfFileReader(pdf_file)
+#                    number_of_pages = read_pdf.getNumPages()
+#                    i = 0
+#                    while i < number_of_pages:
+#                        page = read_pdf.pages[i]
+#                        text = text + "\n\n\n" + page.extractText()
+#            i = i + 1
+#        if text == "":
+#            return "Could not download file"
+#        else:
+#            print(text)
+#            response = "Here is the content of " + title + " by " + authors + ":\n\n" + text
+#            return response
+
     text = f"The web page at {url} doesn't have any useable content. Sorry."
+#    if 'annas-archive.org' in url:
+#        print("Special processing for link " + url + " from Anna's Archive")
+#        text = extract_from_aa(url) + "\n\n"
+#    else:
     try:
         response = requests.get(url)
         print("Fetched " + str(url))
@@ -510,24 +594,36 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
         else:
             return string
 
+def argument_parsing(new_default):
+    boolkeys = ['enforce', 'streaming']
+    antiboolkeys = ['no_enforce', 'no_streaming']
+    for key in new_default:
+       if args.__getattribute__(key):
+            try:
+                new_default[key] = args.__getattribute__(key)
+            except:
+                pass
+    for key in boolkeys:
+        if args.__getattribute__(key):
+            new_default[key] = "y"
+    for key in antiboolkeys:
+        if key == 'no_enforce':
+            if args.__getattribute__(key):
+                new_default['enforce'] = "n"
+        if key == 'no_streaming':
+            if args.__getattribute__(key):
+                new_default['streaming'] = "n"
+    return new_default
+
 if args.prompt:
-    settings = initialize_settings("n", default)
-
-    if args.mode:
-        settings['mode'] = args.mode
-
-    if args.character:
-        settings['character'] = args.character
-
-    if args.system:
-        settings['system'] = args.system
+    settings = initialize_settings("n", argument_parsing(default))
 
     user_message = ""
     url = ""
     if settings['mode'] == "chat":
-        if settings['history_file'] != "n":
+        if settings['history'] != "n":
             try:
-                history = read_history(settings['history_file'])
+                history = read_history(settings['history'])
             except:
                 pass
     user_message = args.prompt
@@ -554,40 +650,31 @@ if args.prompt:
         assistant_message = generate_ai_response(history, user_message, settings, settings['mode'])
     if settings['mode'] == "chat":
         history.append((user_message, assistant_message))
-        if settings['history_file'] != "n":
-            write_history(history,settings['history_file'])
+        if settings['history'] != "n":
+            write_history(history,settings['history'])
     if settings['streaming']:
-        output_result(assistant_message, settings['printer_toggle'], False)
+        output_result(assistant_message, settings['printer'], False)
     else:
-        output_result(assistant_message, settings['printer_toggle'])
+        output_result(assistant_message, settings['printer'])
 
 if not args.prompt:
 # This code initializes the user interface, retrieves the user's settings, and resets the screen. 
 
-    if args.mode:
-        default['mode'] = args.mode
-
-    if args.character:
-        default['character'] = args.character
-
-    if args.system:
-        default['system'] = args.system
-
     if args.direct:
         reset_screen()
-        settings = initialize_settings("n", default)
+        settings = initialize_settings("n", argument_parsing(default))
     else:
-        change_options = start_interface(default)
-        settings = initialize_settings(change_options, default)
+        change_options = start_interface(argument_parsing(default))
+        settings = initialize_settings(change_options, argument_parsing(default))
 
-    if settings['history_file'] != "n":
+    if settings['history'] != "n":
         try:
-            history = read_history(settings['history_file'])
+            history = read_history(settings['history'])
         except:
             pass
     reset_screen()
 
-# This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
+    # This code snippet is a simple chatbot that takes user input, generates an AI response, and outputs the result. It continues to do so indefinitely until the program is terminated. The chatbot stores the conversation history if the mode is set to "chat". 
     while True:
         user_message = input("> ")
         if user_message == "(quit)":
@@ -600,7 +687,7 @@ if not args.prompt:
                 assistant_message = generate_ai_response([], previous_message + "\n" + assistant_message, settings, "completion")
                 print("\n")
         else:
-            output_result(str("> " + user_message + "\n\n"), settings['printer_toggle'], False)
+            output_result(str("> " + user_message + "\n\n"), settings['printer'], False)
             extracted_urls = extract_url(user_message)
             if len(extracted_urls) > 0:
                 i = 0
@@ -626,9 +713,9 @@ if not args.prompt:
         if settings['mode'] == "chat":
             history.append((user_message, assistant_message))
         if settings['streaming']:
-            output_result(assistant_message, settings['printer_toggle'], False)
+            output_result(assistant_message, settings['printer'], False)
         else:
-            output_result(assistant_message, settings['printer_toggle'])
-        if settings['history_file'] != "n":
-            write_history(history,settings['history_file'])
-        previous_message = user_message
+            output_result(assistant_message, settings['printer'])
+        if settings['history'] != "n":
+            write_history(history,settings['history'])
+        previous_message = user_messa
