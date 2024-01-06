@@ -681,7 +681,7 @@ if not args.prompt:
             sys.exit()
         if user_message == "(continue)":
             if settings['streaming']:
-                assistant_message = generate_streaming_response([], previous_message + "\n\n" + assistant_message, settings, "completion")
+                assistant_message = generate_streaming_response([], previous_message + "\n" + assistant_message, settings, "completion")
                 print("\n")
             else:
                 assistant_message = generate_ai_response([], previous_message + "\n" + assistant_message, settings, "completion")
@@ -718,4 +718,4 @@ if not args.prompt:
             output_result(assistant_message, settings['printer'])
         if settings['history'] != "n":
             write_history(history,settings['history'])
-        previous_message = user_messa
+        previous_message = user_message
