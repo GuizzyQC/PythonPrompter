@@ -376,7 +376,7 @@ def initialize_settings(change_options, default):
         else:
             settings['streaming'] = False
         reset_screen()
-        if os.path.exists(printer):
+        if os.path.exists(printer_target):
             answer = ""
             while answer != "y" and answer != "n":
                 answer = str(input("Enter y to enable the printer (empty for default: " + str(default['printer'] +"): ")).lower() or str(default['printer'])).lower()
@@ -465,7 +465,7 @@ def expand_url(url):
 #        text = extract_from_aa(url) + "\n\n"
 #    else:
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=5)
         print("Fetched " + str(url))
     except:
         return f"The page {url} could not be loaded"
@@ -546,8 +546,12 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
             if resultsdata[0]['url']:
                 i = 0
                 while i < settings['max_urls']:
-                    print("Found " + str(resultsdata[i]['url']))
-                    new_context = new_context + expand_url(resultsdata[i]['url']) + "\n"
+                    if resultsdata[i]['engine'] == "meilisearch":
+                        print("Found " + str(resultsdata[i]['title']) + " on local Meilisearch instance")
+                        new_context = new_context + str(resultsdata[i]['content']) + "\n"
+                    else:
+                        print("Found " + str(resultsdata[i]['url']))
+                        new_context = new_context + expand_url(resultsdata[i]['url']) + "\n"
                     i = i + 1
         except:
             pass
