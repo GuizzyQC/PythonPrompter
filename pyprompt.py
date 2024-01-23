@@ -11,9 +11,9 @@ import re
 import shlex 
 import sseclient
 import tiktoken
+import PyPDF2
 from bs4 import BeautifulSoup
 
-#import PyPDF2
 #from ebooklib import epub
 #from bs4 import Tag
 #from urllib.parse import urljoin
@@ -47,6 +47,8 @@ parser.add_argument('--preset', type=str,
                 help='enter preset to load')
 parser.add_argument('--history', type=str,
                 help='enter history file to save chats to')
+parser.add_argument('--instruct_template', type=str,
+                help='enter name of instruct template')
 parser.add_argument('--searx_url', type=str,
                 help='enter searx instance url')
 parser.add_argument('--searx_api_key', type=str,
@@ -73,6 +75,7 @@ default['api_key'] = os.environ.get("OPENAI_API_KEY") or ""
 default['model'] = (os.environ.get("PYPROMPT_MODEL") or "n")
 default['mode'] = (os.environ.get("PYPROMPT_MODE") or "instruct").lower()
 default['preset'] = os.environ.get("PYPROMPT_PRESET") or "Divine Intellect"
+default['instruct_template'] = os.environ.get("PYPROMPT_INSTRUCT_TEMPLATE") or ""
 default['character'] = os.environ.get("PYPROMPT_CHARACTER") or ""
 default['system'] = os.environ.get("PYPROMPT_SYSTEM") or "You are a helpful assistant, answer any request from the user."
 default['enforce'] = (os.environ.get("PYPROMPT_ENFORCE_MODEL") or "n").lower()
@@ -118,6 +121,8 @@ def start_interface(default):
         if str(default['history']) != "n":
             print("History file: " + str(default['history']))
         print("Mode: " + str(default['mode']))
+        if str(default['instruct_template']) != "" and str(default['instruct_template']) != "n":
+            print("Instruct template: " + str(default['instruct_template']))
         if str(default['mode']) == "chat":
             print("Character: " + str(default['character']))
         if str(default['mode']) == "instruct":
@@ -157,13 +162,14 @@ def enforce_model(settings):
 
 # This function generates an AI response based on the chat history and new question provided. It uses the given settings to determine the behavior of the AI. It first checks if the model is not set to "n" and enforces the model if necessary. Then, it creates a list of messages based on the chat history and new questions. Depending on the mode, it adds either a user or system message to the messages list. Finally, it sends a POST request to the URL with the data and headers, and returns the AI's response message. If there is an error during the process, it prints an error message.
 def generate_ai_response(chat_history, prompt, settings, mode):
+    messages = []
     try:
         if settings['model'] != "n":
             enforce_model(settings)
-        messages = []
         if mode == "completion":
             data = {
                 'stream': False,
+                'max_tokens': 4096,
                 'prompt': prompt,
             }
             response = requests.post(settings['url'] + "/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
@@ -175,8 +181,10 @@ def generate_ai_response(chat_history, prompt, settings, mode):
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
+                'max_tokens': 4096,
                 'messages': messages,
-                'mode': 'chat',
+                'instruction_template': settings['instruct_template'],
+                'mode': 'chat-instruct',
                 'character': settings['character'],
             }
             response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
@@ -187,6 +195,9 @@ def generate_ai_response(chat_history, prompt, settings, mode):
             messages.append({"role": "user", "content": prompt})
             data = {
                 'stream': False,
+                'mode': 'instruct',
+                'instruction_template': settings['instruct_template'],
+                'max_tokens': 4096,
                 'messages': messages,
             }
             response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True)
@@ -196,12 +207,13 @@ def generate_ai_response(chat_history, prompt, settings, mode):
         print(f"Error generating response: {str(e)}")
 
 def generate_streaming_response(chat_history, prompt, settings, mode):
+    messages = []
     if settings['model'] != "n":
         enforce_model(settings)
-    messages = []
     if mode == "completion":
         data = {
             'stream': True,
+            'max_tokens': 4096,
             'prompt': prompt,
         }
         response = requests.post(settings['url'] + "/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
@@ -219,8 +231,10 @@ def generate_streaming_response(chat_history, prompt, settings, mode):
         messages.append({"role": "user", "content": prompt})
         data = {
             'stream': True,
+            'max_tokens': 4096,
             'messages': messages,
-            'mode': 'chat',
+            'mode': 'chat-instruct',
+            'instruction_template': settings['instruct_template'],
             'character': settings['character'],
         }
         response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
@@ -236,6 +250,9 @@ def generate_streaming_response(chat_history, prompt, settings, mode):
         messages.append({"role": "user", "content": prompt})
         data = {
             'stream': True,
+            'mode': 'instruct',
+            'instruction_template': settings['instruct_template'],
+            'max_tokens': 4096,
             'messages': messages,
         }
         response = requests.post(settings['url'] + "/chat/completions", headers=settings['headers'], json=data, timeout=3600, verify=True, stream=True)
@@ -264,6 +281,7 @@ def initialize_settings(change_options, default):
     settings['headers'] = ""
     settings['model'] = ""
     settings['mode'] = ""
+    settings['instruct_template'] = ""
     settings['system'] = ""
     settings['character'] = ""
     settings['streaming'] = False
@@ -283,6 +301,7 @@ def initialize_settings(change_options, default):
             settings['model'] = "n"
         settings['preset'] = str(default['preset'])
         settings['mode'] = str(default['mode'])
+        settings['instruct_template'] = str(default['instruct_template'])
         if settings['mode'] == "chat":
             settings['character'] = str(default['character'])
         if settings['mode'] == "instruct":
@@ -347,6 +366,9 @@ def initialize_settings(change_options, default):
                 settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct: ")).lower()
             else:
                 settings['mode'] = str(input("Enter the the mode to run in, either chat or instruct (empty for " + str(default['mode']) + "): ") or str(default['mode'])).lower()
+        reset_screen()
+        while settings['instruct_template'] == "":
+            settings['instruct_template'] = str(input("Enter the instruct template to use (empty for default: " + str(default['instruct_template']) + "): ") or default['instruct_template'])
         reset_screen()
         while settings['mode'] == "chat" and settings['character'] == "":
             settings['history'] = str(input("Enter the history filename to load from and save history to, or n to not save (empty for default: " + str(default['history']) + "): ") or default['history'])
@@ -548,10 +570,20 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
                 while i < settings['max_urls']:
                     if resultsdata[i]['engine'] == "meilisearch":
                         print("Found " + str(resultsdata[i]['title']) + " on local Meilisearch instance")
-                        new_context = new_context + str(resultsdata[i]['content']) + "\n"
+                        new_context = new_context + "Contents of " + str(resultsdata[i]['title']) + ":\n" + str(resultsdata[i]['content']) + "\n"
                     else:
                         print("Found " + str(resultsdata[i]['url']))
-                        new_context = new_context + expand_url(resultsdata[i]['url']) + "\n"
+                        if str(resultsdata[i]['url']).endswith('.pdf'):
+                            response = requests.get(resultsdata[i]['url'])
+                            with io.BytesIO(response.content) as pdf_file:
+                                read_pdf = PyPDF2.PdfFileReader(pdf_file)
+                                number_of_pages = read_pdf.getNumPages()
+                                p = 0
+                                while p < number_of_pages:
+                                    page = read_pdf.pages[p]
+                                    text = text + "\n\n\n" + page.extractText()
+                        else:
+                            new_context = new_context + expand_url(resultsdata[i]['url']) + "\n"
                     i = i + 1
         except:
             pass
@@ -720,6 +752,6 @@ if not args.prompt:
             output_result(assistant_message, settings['printer'], False)
         else:
             output_result(assistant_message, settings['printer'])
-        if settings['history'] != "n":
+        if settings['history'] != "n" and settings['history'] != "":
             write_history(history,settings['history'])
         previous_message = user_message
