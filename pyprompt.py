@@ -11,16 +11,11 @@ import re
 import shlex 
 import sseclient
 import tiktoken
-import PyPDF2
+
 from bs4 import BeautifulSoup
 
-#from ebooklib import epub
-#from bs4 import Tag
-#from urllib.parse import urljoin
-
 printer_target = "/tmp/DEVTERM_PRINTER_IN"
-max_text_length = 16000
-max_tokens = 16000
+max_text_length = 999999
 banner = "*************************\nWelcome to PythonPrompter\n*************************\nType (quit) at the main prompt to exit\nType (search:search term) at the start of a prompt to feed search results\nType (continue) to continue previous answer\n"
 
 default = dict()
@@ -63,6 +58,8 @@ parser.add_argument('--system', type=str,
                 help='enter system prompt to use')
 parser.add_argument('--search', type=str, action='append',
                 help='enter search terms to find')
+parser.add_argument('--max_tokens', type=int, choices=range(1, 200000),
+                help='enter the maximum number of tokens in the context')
 parser.add_argument('--max_urls', type=int, choices=range(1, 11),
                 help='enter the number of search results or the maximum number of urls to read')
 parser.add_argument('--printer', action='store_true', help=argparse.SUPPRESS)
@@ -84,6 +81,7 @@ default['history'] = (os.environ.get("PYPROMPT_HISTORY") or "n").lower()
 default['searx_url'] = (os.environ.get("PYPROMPT_SEARX_URL") or "n").lower()
 default['searx_api_key'] = (os.environ.get("PYPROMPT_SEARX_API_KEY") or "n")
 default['max_urls'] = int(os.environ.get("PYPROMPT_MAX_URLS") or 1)
+default['max_tokens'] = int(os.environ.get("PYPROMPT_MAX_TOKENS") or 15000)
 default['printer'] = (os.environ.get("PYPROMPT_PRINTER") or "n").lower()
 
 
@@ -98,7 +96,6 @@ def output_result(string, output_to_printer=False, echo=True):
 # Hide a string for display, will only show the length of the string
 def star(string):
     return ''.join('*' * len(string))
-
 
 # This function starts the interface by printing the banner, displaying the current settings, and asking the user if they want to change the settings. 
 # It returns a string indicating whether the user wants to change the settings or not. 
@@ -155,7 +152,7 @@ def enforce_model(settings):
             data = {
                 'model_name': settings['model'],
                 'settings': { "preset": settings['preset'] }
-            }
+                }
             response = requests.post(settings['url'] + "/internal/model/load", headers=settings['headers'], json=data, timeout=60, verify=True)
     except Exception as e:
         print(f"Error setting model: {str(e)}")
@@ -314,6 +311,7 @@ def initialize_settings(change_options, default):
         else:
             settings['searx_headers'] = generate_headers(settings['searx_api_key'])
         settings['max_urls'] = default['max_urls']
+        settings['max_tokens'] = default['max_tokens']
         if str(default['streaming']) == "y":
             settings['streaming'] = True
         if os.path.exists(printer_target):
@@ -389,6 +387,7 @@ def initialize_settings(change_options, default):
             settings['searx_headers'] = generate_headers(settings['searx_api_key'])
         reset_screen()
         settings['max_urls'] = int(default['max_urls'])
+        settings['max_tokens'] = int(default['max_tokens'])
         reset_screen()
         answer = ""
         while answer != "y" and answer != "n":
@@ -432,60 +431,7 @@ def trim_to_x_words(prompt, limit):
     return " ".join(rs)
 
 def expand_url(url):
-#    def extract_from_aa(url):
-#       print("extract_from_aa" + url)
-#        def parse_link(link):
-#            url = link.get("href")
-#            if url == "/datasets":
-#                return None
-#            if url[0] == "/":
-#                url = urljoin("https://annas-archive.org", url[1:])
-#            return url
-#        try:
-#            response = requests.get(url)
-#        except:
-#            print("Failed to fetch url")
-#            pass
-#        soup = BeautifulSoup(response.content, "html.parser")
-#        title = soup.find("div", class_="text-3xl font-bold").text
-#        print("Found " + title)
-#        authors = soup.find("div", class_="italic").text
-#        print("By " + authors)
-#        download_links: list[URL] = []
-#        for container in soup.find_all("a", class_="js-download-link"):
-#            link = parse_link(container)
-#            if link is not None:
-#                download_links.append(link)
-#        text = ""
-#        i = 0
-#        while text == "" and i < len(download_links):
-#            print(download_links[i])
-#            response = requests.get(download_links[i])
-#            print(str(response))
-#            if response.headers.get("content-type") == "application/epub":
-#                with io.BytesIO(response.content) as epub_file:
-#                    text = epub.read_epub(epub_file)
-#            if response.headers.get("content-type") == "application/pdf":
-#                with io.BytesIO(response.content) as pdf_file:
-#                    read_pdf = PyPDF2.PdfFileReader(pdf_file)
-#                    number_of_pages = read_pdf.getNumPages()
-#                    i = 0
-#                    while i < number_of_pages:
-#                        page = read_pdf.pages[i]
-#                        text = text + "\n\n\n" + page.extractText()
-#            i = i + 1
-#        if text == "":
-#            return "Could not download file"
-#        else:
-#            print(text)
-#            response = "Here is the content of " + title + " by " + authors + ":\n\n" + text
-#            return response
-
     text = f"The web page at {url} doesn't have any useable content. Sorry."
-#    if 'annas-archive.org' in url:
-#        print("Special processing for link " + url + " from Anna's Archive")
-#        text = extract_from_aa(url) + "\n\n"
-#    else:
     try:
         response = requests.get(url, timeout=5)
         print("Fetched " + str(url))
@@ -522,15 +468,22 @@ def read_history(file):
     history = json.load(f)
     return history
 
-def trim_to_max_tokens(string, reverse=False):
+def trim_to_max_tokens(string, maximum, reverse=False):
     def count_token(string):
         token_counter = tiktoken.get_encoding("cl100k_base")
         return len(token_counter.encode(string))
-    if count_token(string) > max_tokens:
+    if count_token(string) > maximum:
         print("Context too long, truncating context")
         print("Original context: " + str(count_token(string)))
-        while count_token(string) > max_tokens:
-            new_length = len(string) - 100
+        while count_token(string) > maximum:
+            step = 100
+            if (count_token(string) - maximum) > 10000:
+                step = 10000
+            if (count_token(string) - maximum) > 100000:
+                step = 10000
+            if (count_token(string) - maximum) > 300000:
+                step = 100000
+            new_length = len(string) - step
             if reverse:
                 string = string[new_length:]
             else:
@@ -539,8 +492,8 @@ def trim_to_max_tokens(string, reverse=False):
     return string
 
 
-def search_routine(string, settings, direct=False): # This checks if you say "search ... about" something, and if the "Activate Searx integration" checkbox is ticked will search about that
-    def search_string(search_term, settings): # This is the main logic that sends the API request to Searx and returns the text to add to the context
+def search_routine(string, settings, direct=False):
+    def search_string(search_term, settings):
         def html_table_to_text(html_string):
             soup = BeautifulSoup(html_string, 'html.parser')
             tables = soup.find_all('table')
@@ -607,7 +560,7 @@ def search_routine(string, settings, direct=False): # This checks if you say "se
             pass
         if new_context == "":
             new_context = "Could not find the results asked for"
-        return trim_to_max_tokens(new_context)
+        return trim_to_max_tokens(new_context, settings['max_tokens'])
     if direct:
         return str("\nHere is information about " + string + " found online: " + search_string(string, settings))
     else:
